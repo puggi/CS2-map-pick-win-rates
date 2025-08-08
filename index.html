@@ -28,7 +28,6 @@
   <div class="hint">Tip: Zoom with Drag, double click to go back.</div>
 
 <script>
-/* ---------- Helpers ---------- */
 function parseNumber(v){
   if (v===null||v===undefined) return NaN;
   let s = String(v).trim();
@@ -56,13 +55,11 @@ function getField(obj, candidates){
   return undefined;
 }
 
-/* ---------- Globals & UI ---------- */
 let rawData = [];
 const chartEl = document.getElementById('chart');
 const fileInput = document.getElementById('file');
 const searchInput = document.getElementById('search');
 
-/* ---------- Draw scatter ---------- */
 function drawPlot(){
   if (!rawData || rawData.length === 0){
     chartEl.innerHTML = '<div style="padding:12px;color:#666">No data loaded. Put <code>data.csv</code> next to this file or upload via the button.</div>';
@@ -105,13 +102,22 @@ function drawPlot(){
     },
     hovermode: 'closest',
     paper_bgcolor: 'white',
-    plot_bgcolor: 'white'
+    plot_bgcolor: 'white',
+    shapes: [
+      {
+        type: 'line',
+        x0: xRange[0],
+        x1: xRange[1],
+        y0: 50,
+        y1: 50,
+        line: { color: 'red', width: 1, dash: 'dash' }
+      }
+    ]
   };
 
   Plotly.newPlot(chartEl, [trace], layout, { responsive: true, displaylogo: false });
 }
 
-/* ---------- CSV loading ---------- */
 function processRows(rows){
   const parsed = [];
   for (let r of rows){
@@ -140,7 +146,6 @@ function loadCSVFromURL(url='./data.csv'){
   });
 }
 
-/* ---------- UI handlers ---------- */
 fileInput.addEventListener('change', ev=>{
   const f = ev.target.files[0];
   if (!f) return;
@@ -171,7 +176,6 @@ searchInput.addEventListener('input', ()=>{
   Plotly.relayout(chartEl, {'xaxis.range':[ Math.max(0, x-xrange), Math.min(40, x+xrange) ], 'yaxis.range':[ Math.max(-5, y-yrange), Math.min(105, y+yrange) ]});
 });
 
-/* ---------- Start ---------- */
 loadCSVFromURL();
 </script>
 </body>
