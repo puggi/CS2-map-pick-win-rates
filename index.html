@@ -7,35 +7,20 @@
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: white;
-      color: black;
-      padding: 10px;
-      box-sizing: border-box;
-    }
-    header {
-      display:flex;
-      align-items:center;
-      gap:8px;
-      margin-bottom:6px;
-    }
-    h1 { margin:0; font-size:1.0rem; flex:1 }
-    /* Controls: keine Labeltexte (nur Funktion) */
-    #file, #search { font-size:0.9rem; padding:6px 8px; border-radius:6px; border:1px solid #ddd; }
-    #chart { width:100%; height:75vh; min-height:420px; }
-    .hint { color:#555; margin-top:6px; font-size:0.95rem; }
-    @media (max-width:600px){
-      h1 { font-size:0.95rem; }
-      #chart { height:62vh; min-height:360px; }
-    }
+    body { margin:0; font-family:Arial,Helvetica,sans-serif; padding:10px; box-sizing:border-box; background:white; color:#111 }
+    header { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+    h1 { margin:0; font-size:1rem; flex:1 }
+    input { font-size:0.9rem; padding:6px 8px; border-radius:6px; border:1px solid #ddd }
+    #chart { width:100%; height:75vh; min-height:420px }
+    .hint { margin-top:8px; color:#555; font-size:0.95rem }
+    code { background:#f4f4f4; padding:2px 4px; border-radius:3px }
+    @media (max-width:600px){ #chart { height:62vh; min-height:340px } }
   </style>
 </head>
 <body>
   <header>
     <h1>CS Majors — Maps Picked vs Win Rate</h1>
-    <!-- Controls ohne erklärenden Text -->
+    <!-- keine erklärenden Labels, nur funktionale Controls -->
     <input id="file" type="file" accept=".csv" title="Upload CSV" />
     <input id="search" type="text" placeholder="Search team" title="Search team" />
   </header>
@@ -44,19 +29,19 @@
   <div class="hint">Tip: Zoom with Drag, double click to go back.</div>
 
 <script>
-/* ---------- CSV parsing helpers ---------- */
+/* ---------- Helpers (CSV parsing) ---------- */
 function parseNumber(v){
-  if (v === null || v === undefined) return NaN;
+  if (v===null||v===undefined) return NaN;
   let s = String(v).trim();
-  if (s === '') return NaN;
+  if (!s) return NaN;
   s = s.replace('%','').replace(/\s+/g,'').replace(',','.');
   let n = parseFloat(s);
   if (isNaN(n)) return NaN;
-  if (n <= 1.0) n = n * 100;
+  if (n <= 1) n = n * 100;
   return n;
 }
 function parseIntSafe(v){
-  if (v === null || v === undefined) return NaN;
+  if (v===null||v===undefined) return NaN;
   let s = String(v).trim().replace(/\s+/g,'').replace(',','.');
   let n = Number(s);
   return isNaN(n) ? NaN : Math.round(n);
@@ -64,103 +49,99 @@ function parseIntSafe(v){
 function getField(obj, candidates){
   for (let k of Object.keys(obj)){
     let kn = k.toLowerCase().replace(/[_\s]/g,'');
-    for (let cand of candidates){
-      let c = cand.toLowerCase().replace(/[_\s]/g,'');
-      if (kn === c) return obj[k];
+    for (let c of candidates){
+      let cc = c.toLowerCase().replace(/[_\s]/g,'');
+      if (kn === cc) return obj[k];
     }
   }
   return undefined;
 }
 
-/* ---------- Globals ---------- */
+/* ---------- Globals & UI ---------- */
 let rawData = [];
 const chartEl = document.getElementById('chart');
 const fileInput = document.getElementById('file');
 const searchInput = document.getElementById('search');
 
-/* ---------- Arc path builder (SVG path in data coords) ---------- */
-function arcPath(cx, cy, r){
-  // quarter-circle from 90° -> 0° (first quadrant)
-  // M cx,cy L cx, cy+r A r r 0 0 1 cx+r, cy Z
-  // returns string using decimals
-  const x1 = (cx).toFixed(3);
-  const y1 = (cy + r).toFixed(3);
-  const x2 = (cx + r).toFixed(3);
-  const y2 = (cy).toFixed(3);
-  // Use A rx ry xAxisRotation largeArcFlag sweepFlag x y
-  return `M ${cx},${cy} L ${x1},${y1} A ${r},${r} 0 0 1 ${x2},${y2} Z`;
+/* ---------- Build a quarter-ring path in PAPER coords ----------
+   We create a ring section (quarter circle) centered at paper (0,0),
+   from (0,rOuter) clockwise to (rOuter,0) then back along inner radius.
+   Coordinates are in PAPER units (0..1), but can exceed 1 for stronger
+   coverage. Using 'paper' avoids changing data axis ranges.
+-----------------------------------------------------------------*/
+function quarterRingPathPaper(rOuter, rInner){
+  // rOuter > rInner >= 0  (numbers like 1.4, 0.95, 0.55 etc)
+  // SVG arc sweep from top -> right (clockwise)
+  // M 0 0 L 0 rOuter A rOuter rOuter 0 0 1 rOuter 0 L rInner 0 A rInner rInner 0 0 0 0 rInner Z
+  // Use decimal points (dot) for locales.
+  return `M 0 0 L 0 ${rOuter} A ${rOuter} ${rOuter} 0 0 1 ${rOuter} 0 L ${rInner} 0 A ${rInner} ${rInner} 0 0 0 0 ${rInner} Z`;
 }
 
-/* ---------- Draw plot ---------- */
+/* ---------- Draw the scatter + background rings ---------- */
 function drawPlot(){
   if (!rawData || rawData.length === 0){
-    chartEl.innerHTML = '<div style="padding:12px;color:#666">No data loaded. Put <code>data.csv</code> next to this file or upload it using the button.</div>';
+    chartEl.innerHTML = '<div style="padding:12px;color:#666">No data loaded. Put <code>data.csv</code> next to this file or upload via the button.</div>';
     return;
   }
 
-  // fixed axis ranges per your request
-  const xMin = 0;
-  const xMax = 40;            // fixed domain up to 40
-  const yMin = -5;
-  const yMax = 105;
+  // Fixed axis ranges per your requirement
+  const xRange = [0, 40];    // X from 0 to 40 (highest pick is 33)
+  const yRange = [-5, 105];  // extra 5% padding top/bottom
 
   // Data arrays
-  const names = rawData.map(d => d.team);
-  const xs = rawData.map(d => d.maps);
-  const ys = rawData.map(d => (d.win === null ? NaN : d.win));
-  const hoverTexts = rawData.map(d => `${d.team}<br>Maps: ${d.maps}<br>Win Rate: ${ (d.win === null ? '—' : d.win.toFixed(2) + '%') }`);
+  const xs = rawData.map(d=>d.maps);
+  const ys = rawData.map(d=> d.win === null ? NaN : d.win);
+  const names = rawData.map(d=>d.team);
+  const hover = rawData.map(d => `${d.team}<br>Maps: ${d.maps}<br>Win Rate: ${ (d.win===null ? '—' : d.win.toFixed(2)+'%') }`);
 
   const trace = {
     x: xs, y: ys,
-    mode: 'markers', type: 'scatter',
-    text: hoverTexts,
+    mode: 'markers',
+    type: 'scatter',
+    text: hover,
     hovertemplate: '<b>%{text}</b><extra></extra>',
-    marker: {
-      size: 9,
-      color: 'black',
-      opacity: 0.95,
-      line: { width: 0.5, color: 'rgba(0,0,0,0.25)' }
-    },
+    marker: { size:9, color:'black', opacity:0.95, line:{width:0.4, color:'rgba(0,0,0,0.25)'} },
     customdata: names
   };
 
-  // Choose radii relative to axis extents to get similar look across datasets.
-  // Use the larger axis span as base to keep proportions.
-  const axisSpan = Math.max(xMax - xMin, yMax - yMin);
-  const outerR = axisSpan * 1.6;  // outermost (red)
-  const midR   = axisSpan * 1.05; // middle (yellow)
-  const innerR = axisSpan * 0.55; // inner (green)
+  // PAPER-coordinates radii (tweak these to make arcs bigger/smaller)
+  // Values larger than 1 reach beyond the plot area and create the big sweeping arcs.
+  const outerR = 1.6;  // outer red arc
+  const midR   = 1.05; // middle yellow arc
+  const innerR = 0.55; // inner green arc (could be 0 for a solid quarter disk)
 
-  // Build shapes: draw outer (red) first -> then yellow -> then green on top
   const shapes = [
     {
       type: 'path',
-      path: arcPath(0, 0, outerR),
-      fillcolor: 'rgba(250,180,180,0.55)', // soft pastel red
+      path: quarterRingPathPaper(outerR, midR), // ring from outerR -> midR (red)
+      xref: 'paper', yref: 'paper',
+      fillcolor: 'rgba(250,160,160,0.55)',
       line: { width: 0 },
-      xref: 'x', yref: 'y'
+      layer: 'below'
     },
     {
       type: 'path',
-      path: arcPath(0, 0, midR),
-      fillcolor: 'rgba(255,255,190,0.56)', // soft pastel yellow
+      path: quarterRingPathPaper(midR, innerR), // ring from midR -> innerR (yellow)
+      xref: 'paper', yref: 'paper',
+      fillcolor: 'rgba(255,255,180,0.55)',
       line: { width: 0 },
-      xref: 'x', yref: 'y'
+      layer: 'below'
     },
     {
       type: 'path',
-      path: arcPath(0, 0, innerR),
-      fillcolor: 'rgba(190,255,190,0.6)',  // soft pastel green
+      path: quarterRingPathPaper(innerR, 0), // inner quarter disk (green)
+      xref: 'paper', yref: 'paper',
+      fillcolor: 'rgba(190,255,190,0.6)',
       line: { width: 0 },
-      xref: 'x', yref: 'y'
+      layer: 'below'
     }
   ];
 
   const layout = {
-    margin: { t: 40, r: 18, b: 62, l: 62 },
+    margin: { t:40, r:18, b:62, l:62 },
     xaxis: {
       title: 'Maps picked (last 9 Majors)',
-      range: [xMin, xMax],
+      range: xRange,
       zeroline: false,
       showgrid: true,
       gridcolor: '#eee',
@@ -168,46 +149,31 @@ function drawPlot(){
     },
     yaxis: {
       title: 'Win Rate (%)',
-      range: [yMin, yMax],
+      range: yRange,
       showgrid: true,
       gridcolor: '#eee'
     },
     hovermode: 'closest',
     shapes: shapes,
     paper_bgcolor: 'white',
-    plot_bgcolor: 'white',
-    // fix aspect ratio so that circles look circular (helps visual)
-    // NOTE: scaleanchor works well if there's enough space — it's optional but generally desirable
-    // If it causes layout issues in some viewers, you can remove scaleanchor/scaleratio.
-    yaxis2: {}, // dummy to avoid warnings
+    plot_bgcolor: 'white'
   };
 
-  // Try to keep aspect ratio ~1 so arcs look circular
-  layout.yaxis.scaleanchor = 'x';
-  layout.yaxis.scaleratio = 1;
-
-  Plotly.newPlot(chartEl, [trace], layout, { responsive: true, displaylogo: false }).then(() => {
-    // After plot, attach click to show team name in console (optional)
-    chartEl.on('plotly_hover', (ev) => {
-      // no extra action, hovertemplate already shows data
-    });
-  });
+  Plotly.newPlot(chartEl, [trace], layout, { responsive: true, displaylogo: false });
 }
 
-/* ---------- CSV loading ---------- */
+/* ---------- CSV loading & processing ---------- */
 function processRows(rows){
   const parsed = [];
   for (let r of rows){
-    if (Object.keys(r).length === 0) continue;
-    let teamV = getField(r, ['Team','team','TeamName','team_name','Team Name']);
-    let mapsV = getField(r, ['MapsPicked','Maps','maps_picked','mapspicked','picks','maps']);
-    let winV = getField(r, ['WinRate','Winrate','win_rate','win%','Win%','WinRate%','win']);
-    let team = teamV ? String(teamV).trim() : '';
+    if (!r || Object.keys(r).length===0) continue;
+    const teamV = getField(r, ['Team','team','TeamName','team_name','Team Name']);
+    const mapsV = getField(r, ['MapsPicked','Maps','maps_picked','mapspicked','picks','maps']);
+    const winV  = getField(r, ['WinRate','Winrate','win_rate','win%','Win%','WinRate%','win']);
+    const team = teamV ? String(teamV).trim() : '';
     if (!team) continue;
-    let maps = parseIntSafe(mapsV);
-    if (isNaN(maps)) maps = 0;
-    let win = parseNumber(winV);
-    if (isNaN(win)) win = null;
+    let maps = parseIntSafe(mapsV); if (isNaN(maps)) maps = 0;
+    let win  = parseNumber(winV);  if (isNaN(win)) win = null;
     parsed.push({ team, maps, win });
   }
   rawData = parsed;
@@ -218,10 +184,10 @@ function loadCSVFromURL(url='./data.csv'){
   fetch(url).then(r=>{
     if (!r.ok) throw new Error('not found');
     return r.text();
-  }).then(txt => {
+  }).then(txt=>{
     Papa.parse(txt, { header:true, skipEmptyLines:true, complete: res => processRows(res.data) });
-  }).catch(() => {
-    chartEl.innerHTML = '<div style="padding:12px;color:#666">No CSV auto-loaded. Upload a CSV using the button or serve the page via http(s) (e.g. GitHub Pages).</div>';
+  }).catch(()=>{
+    chartEl.innerHTML = '<div style="padding:12px;color:#666">No CSV auto-loaded. Upload manually or serve via http(s) (e.g. GitHub Pages).</div>';
   });
 }
 
@@ -229,45 +195,35 @@ function loadCSVFromURL(url='./data.csv'){
 fileInput.addEventListener('change', ev=>{
   const f = ev.target.files[0];
   if (!f) return;
-  const r = new FileReader();
-  r.onload = () => {
-    Papa.parse(r.result, { header:true, skipEmptyLines:true, complete: res => processRows(res.data) });
-  };
-  r.readAsText(f);
+  const reader = new FileReader();
+  reader.onload = () => { Papa.parse(reader.result, { header:true, skipEmptyLines:true, complete: res => processRows(res.data) }); };
+  reader.readAsText(f);
 });
 
 searchInput.addEventListener('input', ()=>{
-  const query = searchInput.value.trim().toLowerCase();
-  if (!query){
-    // reset marker colors
-    if (rawData && rawData.length) {
-      const baseColors = rawData.map(_=> 'black');
-      Plotly.restyle(chartEl, {'marker.color':[baseColors], 'marker.size':[rawData.map(_=>9)]});
-    }
+  const q = searchInput.value.trim().toLowerCase();
+  if (!q){
+    if (!rawData || rawData.length===0) return;
+    Plotly.restyle(chartEl, {'marker.color': [ rawData.map(_=>'black') ], 'marker.size': [ rawData.map(_=>9) ] });
+    Plotly.relayout(chartEl, {'xaxis.range':[0,40], 'yaxis.range':[-5,105]});
     return;
   }
-  const idx = rawData.findIndex(d => d.team.toLowerCase().includes(query));
+  const idx = rawData.findIndex(d => d.team.toLowerCase().includes(q));
   if (idx === -1){
-    // dim all
-    const dim = rawData.map(_=> 'rgba(0,0,0,0.15)');
-    Plotly.restyle(chartEl, {'marker.color':[dim], 'marker.size':[rawData.map(_=>7)]});
+    Plotly.restyle(chartEl, {'marker.color':[ rawData.map(_=>'rgba(0,0,0,0.15)') ], 'marker.size':[ rawData.map(_=>7) ]});
     return;
   }
-  const colors = rawData.map((_,i)=> i===idx ? 'red' : 'rgba(0,0,0,0.2)');
+  const colors = rawData.map((_,i)=> i===idx ? 'red' : 'rgba(0,0,0,0.25)');
   const sizes  = rawData.map((_,i)=> i===idx ? 14 : 8);
   Plotly.restyle(chartEl, {'marker.color':[colors], 'marker.size':[sizes]});
-  // optional: zoom near the found point
-  const x = rawData[idx].maps;
-  const y = rawData[idx].win === null ? 50 : rawData[idx].win;
+  // zoom a bit near the found point
+  const x = rawData[idx].maps; const y = rawData[idx].win===null ? 50 : rawData[idx].win;
   const xrange = Math.max(6, Math.round(Math.max(6, x * 0.25)));
-  const yrange = Math.max(8, Math.round(Math.max(8, 10)));
-  Plotly.relayout(chartEl, {
-    'xaxis.range': [Math.max(0, x - xrange), Math.min(40, x + xrange)],
-    'yaxis.range': [Math.max(-5, y - yrange), Math.min(105, y + yrange)]
-  });
+  const yrange = 12;
+  Plotly.relayout(chartEl, {'xaxis.range':[ Math.max(0, x-xrange), Math.min(40, x+xrange) ], 'yaxis.range':[ Math.max(-5, y-yrange), Math.min(105, y+yrange) ]});
 });
 
-/* ---------- start ---------- */
+/* ---------- Start ---------- */
 loadCSVFromURL();
 </script>
 </body>
