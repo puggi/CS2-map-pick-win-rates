@@ -20,7 +20,6 @@
 <body>
   <header>
     <h1>CS Majors — Maps Picked vs Win Rate</h1>
-    <!-- keine erklärenden Labels, nur funktionale Controls -->
     <input id="file" type="file" accept=".csv" title="Upload CSV" />
     <input id="search" type="text" placeholder="Search team" title="Search team" />
   </header>
@@ -29,7 +28,7 @@
   <div class="hint">Tip: Zoom with Drag, double click to go back.</div>
 
 <script>
-/* ---------- Helpers (CSV parsing) ---------- */
+/* ---------- Helpers ---------- */
 function parseNumber(v){
   if (v===null||v===undefined) return NaN;
   let s = String(v).trim();
@@ -63,32 +62,16 @@ const chartEl = document.getElementById('chart');
 const fileInput = document.getElementById('file');
 const searchInput = document.getElementById('search');
 
-/* ---------- Build a quarter-ring path in PAPER coords ----------
-   We create a ring section (quarter circle) centered at paper (0,0),
-   from (0,rOuter) clockwise to (rOuter,0) then back along inner radius.
-   Coordinates are in PAPER units (0..1), but can exceed 1 for stronger
-   coverage. Using 'paper' avoids changing data axis ranges.
------------------------------------------------------------------*/
-function quarterRingPathPaper(rOuter, rInner){
-  // rOuter > rInner >= 0  (numbers like 1.4, 0.95, 0.55 etc)
-  // SVG arc sweep from top -> right (clockwise)
-  // M 0 0 L 0 rOuter A rOuter rOuter 0 0 1 rOuter 0 L rInner 0 A rInner rInner 0 0 0 0 rInner Z
-  // Use decimal points (dot) for locales.
-  return `M 0 0 L 0 ${rOuter} A ${rOuter} ${rOuter} 0 0 1 ${rOuter} 0 L ${rInner} 0 A ${rInner} ${rInner} 0 0 0 0 ${rInner} Z`;
-}
-
-/* ---------- Draw the scatter + background rings ---------- */
+/* ---------- Draw scatter ---------- */
 function drawPlot(){
   if (!rawData || rawData.length === 0){
     chartEl.innerHTML = '<div style="padding:12px;color:#666">No data loaded. Put <code>data.csv</code> next to this file or upload via the button.</div>';
     return;
   }
 
-  // Fixed axis ranges per your requirement
-  const xRange = [0, 40];    // X from 0 to 40 (highest pick is 33)
-  const yRange = [-5, 105];  // extra 5% padding top/bottom
+  const xRange = [0, 40];
+  const yRange = [-5, 105];
 
-  // Data arrays
   const xs = rawData.map(d=>d.maps);
   const ys = rawData.map(d=> d.win === null ? NaN : d.win);
   const names = rawData.map(d=>d.team);
@@ -103,39 +86,6 @@ function drawPlot(){
     marker: { size:9, color:'black', opacity:0.95, line:{width:0.4, color:'rgba(0,0,0,0.25)'} },
     customdata: names
   };
-
-  // PAPER-coordinates radii (tweak these to make arcs bigger/smaller)
-  // Values larger than 1 reach beyond the plot area and create the big sweeping arcs.
-  const outerR = 1.6;  // outer red arc
-  const midR   = 1.05; // middle yellow arc
-  const innerR = 0.55; // inner green arc (could be 0 for a solid quarter disk)
-
-  const shapes = [
-    {
-      type: 'path',
-      path: quarterRingPathPaper(outerR, midR), // ring from outerR -> midR (red)
-      xref: 'paper', yref: 'paper',
-      fillcolor: 'rgba(250,160,160,0.55)',
-      line: { width: 0 },
-      layer: 'below'
-    },
-    {
-      type: 'path',
-      path: quarterRingPathPaper(midR, innerR), // ring from midR -> innerR (yellow)
-      xref: 'paper', yref: 'paper',
-      fillcolor: 'rgba(255,255,180,0.55)',
-      line: { width: 0 },
-      layer: 'below'
-    },
-    {
-      type: 'path',
-      path: quarterRingPathPaper(innerR, 0), // inner quarter disk (green)
-      xref: 'paper', yref: 'paper',
-      fillcolor: 'rgba(190,255,190,0.6)',
-      line: { width: 0 },
-      layer: 'below'
-    }
-  ];
 
   const layout = {
     margin: { t:40, r:18, b:62, l:62 },
@@ -154,7 +104,6 @@ function drawPlot(){
       gridcolor: '#eee'
     },
     hovermode: 'closest',
-    shapes: shapes,
     paper_bgcolor: 'white',
     plot_bgcolor: 'white'
   };
@@ -162,7 +111,7 @@ function drawPlot(){
   Plotly.newPlot(chartEl, [trace], layout, { responsive: true, displaylogo: false });
 }
 
-/* ---------- CSV loading & processing ---------- */
+/* ---------- CSV loading ---------- */
 function processRows(rows){
   const parsed = [];
   for (let r of rows){
@@ -216,7 +165,6 @@ searchInput.addEventListener('input', ()=>{
   const colors = rawData.map((_,i)=> i===idx ? 'red' : 'rgba(0,0,0,0.25)');
   const sizes  = rawData.map((_,i)=> i===idx ? 14 : 8);
   Plotly.restyle(chartEl, {'marker.color':[colors], 'marker.size':[sizes]});
-  // zoom a bit near the found point
   const x = rawData[idx].maps; const y = rawData[idx].win===null ? 50 : rawData[idx].win;
   const xrange = Math.max(6, Math.round(Math.max(6, x * 0.25)));
   const yrange = 12;
