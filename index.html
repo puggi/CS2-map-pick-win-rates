@@ -66,7 +66,7 @@ function drawPlot(){
     return;
   }
 
-  const xRange = [0, 40];
+  const xRange = [0, 25];
   const yRange = [-5, 105];
 
   const xs = rawData.map(d=>d.maps);
@@ -104,6 +104,7 @@ function drawPlot(){
     paper_bgcolor: 'white',
     plot_bgcolor: 'white',
     shapes: [
+      // Horizontale Linie bei 50%
       {
         type: 'line',
         x0: xRange[0],
@@ -111,6 +112,13 @@ function drawPlot(){
         y0: 50,
         y1: 50,
         line: { color: 'red', width: 1, dash: 'dash' }
+      },
+      // Grüne Fläche (Polygon)
+      {
+        type: 'path',
+        path: `M 10,105 L 35,52 L 35,105 Z`,
+        fillcolor: 'rgba(144, 238, 144, 0.4)', // Pastellgrün
+        line: { width: 0 }
       }
     ]
   };
@@ -159,7 +167,7 @@ searchInput.addEventListener('input', ()=>{
   if (!q){
     if (!rawData || rawData.length===0) return;
     Plotly.restyle(chartEl, {'marker.color': [ rawData.map(_=>'black') ], 'marker.size': [ rawData.map(_=>9) ] });
-    Plotly.relayout(chartEl, {'xaxis.range':[0,40], 'yaxis.range':[-5,105]});
+    Plotly.relayout(chartEl, {'xaxis.range':[0,35], 'yaxis.range':[-5,105]});
     return;
   }
   const idx = rawData.findIndex(d => d.team.toLowerCase().includes(q));
@@ -173,7 +181,7 @@ searchInput.addEventListener('input', ()=>{
   const x = rawData[idx].maps; const y = rawData[idx].win===null ? 50 : rawData[idx].win;
   const xrange = Math.max(6, Math.round(Math.max(6, x * 0.25)));
   const yrange = 12;
-  Plotly.relayout(chartEl, {'xaxis.range':[ Math.max(0, x-xrange), Math.min(40, x+xrange) ], 'yaxis.range':[ Math.max(-5, y-yrange), Math.min(105, y+yrange) ]});
+  Plotly.relayout(chartEl, {'xaxis.range':[ Math.max(0, x-xrange), Math.min(25, x+xrange) ], 'yaxis.range':[ Math.max(-5, y-yrange), Math.min(105, y+yrange) ]});
 });
 
 loadCSVFromURL();
