@@ -68,7 +68,7 @@ function drawPlot(){
 
   // X-Achse jetzt bis 35
   const xRange = [0, 35];
-  const yRange = [-5, 105];
+  const yRange = [0, 90];
 
   const xs = rawData.map(d=>d.maps);
   const ys = rawData.map(d=> d.win === null ? NaN : d.win);
@@ -207,3 +207,4 @@ loadCSVFromURL();
 </script>
 </body>
 </html>
+
