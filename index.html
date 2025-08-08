@@ -66,9 +66,8 @@ function drawPlot(){
     return;
   }
 
-  // X-Achse jetzt bis 35
   const xRange = [0, 35];
-  const yRange = [0, 90];
+  const yRange = [-5, 105];
 
   const xs = rawData.map(d=>d.maps);
   const ys = rawData.map(d=> d.win === null ? NaN : d.win);
@@ -125,17 +124,17 @@ function drawPlot(){
         y1: 50,
         line: { color: 'red', width: 1, dash: 'dash' }
       },
-      // Grüne Fläche (Polygon)
+      // Grüne Fläche (vergrößert: Startpunkt 0,90 statt 10,105)
       {
         type: 'path',
-        path: `M 10,105 L 35,52 L 35,105 Z`,
+        path: `M 0,90 L 35,52 L 35,105 Z`,
         fillcolor: 'rgba(144, 238, 144, 0.4)', // Pastellgrün
         line: { width: 0 }
       },
-      // Gelbe Fläche (von 0/50 bis 35/45, dann zum grünen Dreieck)
+      // Gelbe Fläche (angepasst, damit sie an neue grüne Fläche anschließt)
       {
         type: 'path',
-        path: `M 0,50 L 35,45 L 35,52 L 10,105 L 0,105 Z`,
+        path: `M 0,50 L 35,45 L 35,52 L 0,90 Z`,
         fillcolor: 'rgba(255, 255, 153, 0.4)', // Pastellgelb
         line: { width: 0 }
       }
@@ -207,4 +206,3 @@ loadCSVFromURL();
 </script>
 </body>
 </html>
-
