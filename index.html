@@ -66,6 +66,7 @@ function drawPlot(){
     return;
   }
 
+  // X-Achse jetzt bis 35
   const xRange = [0, 35];
   const yRange = [-5, 105];
 
@@ -104,6 +105,17 @@ function drawPlot(){
     paper_bgcolor: 'white',
     plot_bgcolor: 'white',
     shapes: [
+      // Hintergrund in Pastellrot
+      {
+        type: 'rect',
+        x0: 0,
+        y0: -5,
+        x1: 35,
+        y1: 105,
+        fillcolor: 'rgba(255, 182, 193, 0.25)', // Pastellrot
+        line: { width: 0 },
+        layer: 'below'
+      },
       // Horizontale Linie bei 50%
       {
         type: 'line',
@@ -118,6 +130,13 @@ function drawPlot(){
         type: 'path',
         path: `M 10,105 L 35,52 L 35,105 Z`,
         fillcolor: 'rgba(144, 238, 144, 0.4)', // Pastellgrün
+        line: { width: 0 }
+      },
+      // Gelbe Fläche (von 0/50 bis 35/45, dann zum grünen Dreieck)
+      {
+        type: 'path',
+        path: `M 0,50 L 35,45 L 35,52 L 10,105 L 0,105 Z`,
+        fillcolor: 'rgba(255, 255, 153, 0.4)', // Pastellgelb
         line: { width: 0 }
       }
     ]
@@ -181,11 +200,10 @@ searchInput.addEventListener('input', ()=>{
   const x = rawData[idx].maps; const y = rawData[idx].win===null ? 50 : rawData[idx].win;
   const xrange = Math.max(6, Math.round(Math.max(6, x * 0.25)));
   const yrange = 12;
-  Plotly.relayout(chartEl, {'xaxis.range':[ Math.max(0, x-xrange), Math.min(25, x+xrange) ], 'yaxis.range':[ Math.max(-5, y-yrange), Math.min(105, y+yrange) ]});
+  Plotly.relayout(chartEl, {'xaxis.range':[ Math.max(0, x-xrange), Math.min(35, x+xrange) ], 'yaxis.range':[ Math.max(-5, y-yrange), Math.min(105, y+yrange) ]});
 });
 
 loadCSVFromURL();
 </script>
 </body>
 </html>
-
