@@ -124,17 +124,30 @@ function drawPlot(){
         y1: 50,
         line: { color: 'red', width: 1, dash: 'dash' }
       },
-      // Grüne Fläche (Viereck von 0,80 bis ganz oben)
+      // Grüne Fläche mit Bézier-Kurve
       {
         type: 'path',
-        path: `M 0,80 L 35,52 L 35,105 L 0,105 Z`,
+        path: `
+          M 0,80 
+          L 0,105
+          C 10,105 20,56 35,55
+          L 35,52
+          Z
+        `,
         fillcolor: 'rgba(144, 238, 144, 0.4)', // Pastellgrün
         line: { width: 0 }
       },
-      // Gelbe Fläche (angepasst, damit sie unter grüner Fläche endet)
+      // Gelbe Fläche unter der grünen Kurve
       {
         type: 'path',
-        path: `M 0,50 L 35,45 L 35,52 L 0,80 Z`,
+        path: `
+          M 0,50 
+          L 35,45 
+          L 35,52 
+          C 35,52 20,56 10,105 
+          L 0,80
+          Z
+        `,
         fillcolor: 'rgba(255, 255, 153, 0.4)', // Pastellgelb
         line: { width: 0 }
       }
