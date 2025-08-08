@@ -1,86 +1,208 @@
 <!DOCTYPE html>
-<meta charset="utf-8">
-<style>
-  body {
-    font: 10px sans-serif;
-  }
-
-  .axis path,
-  .axis line {
-    fill: none;
-    stroke: #000;
-    shape-rendering: crispEdges;
-  }
-</style>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>CS Majors — Picks vs Win Rate</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+  <style>
+    body { margin:0; font-family:Arial,Helvetica,sans-serif; padding:10px; box-sizing:border-box; background:white; color:#111 }
+    header { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+    h1 { margin:0; font-size:1rem; flex:1 }
+    input { font-size:0.9rem; padding:6px 8px; border-radius:6px; border:1px solid #ddd }
+    #chart { width:100%; height:75vh; min-height:420px }
+    .hint { margin-top:8px; color:#555; font-size:0.95rem }
+    code { background:#f4f4f4; padding:2px 4px; border-radius:3px }
+    @media (max-width:600px){ #chart { height:62vh; min-height:340px } }
+  </style>
+</head>
 <body>
-<script src="https://d3js.org/d3.v5.min.js"></script>
+  <header>
+    <h1>CS Majors — Maps Picked vs Win Rate</h1>
+    <input id="file" type="file" accept=".csv" title="Upload CSV" />
+    <input id="search" type="text" placeholder="Search team" title="Search team" />
+  </header>
+
+  <div id="chart"></div>
+  <div class="hint">Tip: Zoom with Drag, double click to go back.</div>
+
 <script>
+function parseNumber(v){
+  if (v===null||v===undefined) return NaN;
+  let s = String(v).trim();
+  if (!s) return NaN;
+  s = s.replace('%','').replace(/\s+/g,'').replace(',','.');
+  let n = parseFloat(s);
+  if (isNaN(n)) return NaN;
+  if (n <= 1) n = n * 100;
+  return n;
+}
+function parseIntSafe(v){
+  if (v===null||v===undefined) return NaN;
+  let s = String(v).trim().replace(/\s+/g,'').replace(',','.');
+  let n = Number(s);
+  return isNaN(n) ? NaN : Math.round(n);
+}
+function getField(obj, candidates){
+  for (let k of Object.keys(obj)){
+    let kn = k.toLowerCase().replace(/[_\s]/g,'');
+    for (let c of candidates){
+      let cc = c.toLowerCase().replace(/[_\s]/g,'');
+      if (kn === cc) return obj[k];
+    }
+  }
+  return undefined;
+}
 
-var margin = {top: 20, right: 20, bottom: 30, left: 50},
-    width = 960 - margin.left - margin.right,
-    height = 500 - margin.top - margin.bottom;
+let rawData = [];
+const chartEl = document.getElementById('chart');
+const fileInput = document.getElementById('file');
+const searchInput = document.getElementById('search');
 
-var x = d3.scaleLinear().domain([0, 35]).range([0, width]),
-    y = d3.scaleLinear().domain([0, 105]).range([height, 0]);
+function drawPlot(){
+  if (!rawData || rawData.length === 0){
+    chartEl.innerHTML = '<div style="padding:12px;color:#666">No data loaded. Put <code>data.csv</code> next to this file or upload via the button.</div>';
+    return;
+  }
 
-var svg = d3.select("body").append("svg")
-    .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom)
-  .append("g")
-    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+  const xRange = [0, 35];
+  const yRange = [-5, 105];
 
-// Neue grüne Fläche
-var greenArea = d3.area()
-    .x(function(d) { return x(d.x); })
-    .y0(function(d) { return y(d.y0); })
-    .y1(function(d) { return y(d.y1); })
-    .curve(d3.curveMonotoneX);
+  const xs = rawData.map(d=>d.maps);
+  const ys = rawData.map(d=> d.win === null ? NaN : d.win);
+  const names = rawData.map(d=>d.team);
+  const hover = rawData.map(d => `${d.team}<br>Maps: ${d.maps}<br>Win Rate: ${ (d.win===null ? '—' : d.win.toFixed(2)+'%') }`);
 
-var greenData = [
-  {x: 35, y0: 105, y1: 55},  // Rechte Kante
-  {x: 20, y0: 105, y1: 56},  // Kurvenmitte
-  {x: 10, y0: 105, y1: 105}  // Linke obere Ecke
-];
+  const trace = {
+    x: xs, y: ys,
+    mode: 'markers',
+    type: 'scatter',
+    text: hover,
+    hovertemplate: '<b>%{text}</b><extra></extra>',
+    marker: { size:9, color:'black', opacity:0.95, line:{width:0.4, color:'rgba(0,0,0,0.25)'} },
+    customdata: names
+  };
 
-svg.append("path")
-    .datum(greenData)
-    .attr("fill", "rgba(144, 238, 144, 0.4)") // Pastellgrün
-    .attr("stroke", "none")
-    .attr("d", d3.area()
-        .x(function(d) { return x(d.x); })
-        .y0(function(d) { return y(d.y1); }) // untere Kurve
-        .y1(function(d) { return y(d.y0); }) // obere Kante
-        .curve(d3.curveMonotoneX)
-    );
+  const layout = {
+    margin: { t:40, r:18, b:62, l:62 },
+    xaxis: {
+      title: 'Maps picked (last 9 Majors)',
+      range: xRange,
+      zeroline: false,
+      showgrid: true,
+      gridcolor: '#eee',
+      dtick: 5
+    },
+    yaxis: {
+      title: 'Win Rate (%)',
+      range: yRange,
+      showgrid: true,
+      gridcolor: '#eee'
+    },
+    hovermode: 'closest',
+    paper_bgcolor: 'white',
+    plot_bgcolor: 'white',
+    shapes: [
+      // Hintergrund in Pastellrot
+      {
+        type: 'rect',
+        x0: 0,
+        y0: -5,
+        x1: 35,
+        y1: 105,
+        fillcolor: 'rgba(255, 182, 193, 0.25)', // Pastellrot
+        line: { width: 0 },
+        layer: 'below'
+      },
+      // Horizontale Linie bei 50%
+      {
+        type: 'line',
+        x0: xRange[0],
+        x1: xRange[1],
+        y0: 50,
+        y1: 50,
+        line: { color: 'red', width: 1, dash: 'dash' }
+      },
+      // Grüne Fläche (Viereck von 0,80 bis ganz oben)
+      {
+        type: 'path',
+        path: `M 0,80 L 35,52 L 35,105 L 0,105 Z`,
+        fillcolor: 'rgba(144, 238, 144, 0.4)', // Pastellgrün
+        line: { width: 0 }
+      },
+      // Gelbe Fläche (angepasst, damit sie unter grüner Fläche endet)
+      {
+        type: 'path',
+        path: `M 0,50 L 35,45 L 35,52 L 0,80 Z`,
+        fillcolor: 'rgba(255, 255, 153, 0.4)', // Pastellgelb
+        line: { width: 0 }
+      }
+    ]
+  };
 
-// Gelbe Fläche
-svg.append("polygon")
-    .attr("points", function() {
-      return [
-        [x(0), y(50)],
-        [x(35), y(45)],
-        [x(35), y(55)],
-        [x(20), y(56)],
-        [x(10), y(105)],
-        [x(0), y(90)]
-      ].map(function(d) { return d.join(","); }).join(" ");
-    })
-    .attr("fill", "rgba(255, 255, 153, 0.4)");
+  Plotly.newPlot(chartEl, [trace], layout, { responsive: true, displaylogo: false });
+}
 
-// Rote Fläche
-svg.append("rect")
-    .attr("x", 0)
-    .attr("y", 0)
-    .attr("width", width)
-    .attr("height", height)
-    .attr("fill", "rgba(255, 182, 193, 0.3)");
+function processRows(rows){
+  const parsed = [];
+  for (let r of rows){
+    if (!r || Object.keys(r).length===0) continue;
+    const teamV = getField(r, ['Team','team','TeamName','team_name','Team Name']);
+    const mapsV = getField(r, ['MapsPicked','Maps','maps_picked','mapspicked','picks','maps']);
+    const winV  = getField(r, ['WinRate','Winrate','win_rate','win%','Win%','WinRate%','win']);
+    const team = teamV ? String(teamV).trim() : '';
+    if (!team) continue;
+    let maps = parseIntSafe(mapsV); if (isNaN(maps)) maps = 0;
+    let win  = parseNumber(winV);  if (isNaN(win)) win = null;
+    parsed.push({ team, maps, win });
+  }
+  rawData = parsed;
+  drawPlot();
+}
 
-// Beispiel-Achsen
-svg.append("g")
-    .attr("transform", "translate(0," + height + ")")
-    .call(d3.axisBottom(x));
+function loadCSVFromURL(url='./data.csv'){
+  fetch(url).then(r=>{
+    if (!r.ok) throw new Error('not found');
+    return r.text();
+  }).then(txt=>{
+    Papa.parse(txt, { header:true, skipEmptyLines:true, complete: res => processRows(res.data) });
+  }).catch(()=>{
+    chartEl.innerHTML = '<div style="padding:12px;color:#666">No CSV auto-loaded. Upload manually or serve via http(s) (e.g. GitHub Pages).</div>';
+  });
+}
 
-svg.append("g")
-    .call(d3.axisLeft(y));
+fileInput.addEventListener('change', ev=>{
+  const f = ev.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => { Papa.parse(reader.result, { header:true, skipEmptyLines:true, complete: res => processRows(res.data) }); };
+  reader.readAsText(f);
+});
 
+searchInput.addEventListener('input', ()=>{
+  const q = searchInput.value.trim().toLowerCase();
+  if (!q){
+    if (!rawData || rawData.length===0) return;
+    Plotly.restyle(chartEl, {'marker.color': [ rawData.map(_=>'black') ], 'marker.size': [ rawData.map(_=>9) ] });
+    Plotly.relayout(chartEl, {'xaxis.range':[0,35], 'yaxis.range':[-5,105]});
+    return;
+  }
+  const idx = rawData.findIndex(d => d.team.toLowerCase().includes(q));
+  if (idx === -1){
+    Plotly.restyle(chartEl, {'marker.color':[ rawData.map(_=>'rgba(0,0,0,0.15)') ], 'marker.size':[ rawData.map(_=>7) ]});
+    return;
+  }
+  const colors = rawData.map((_,i)=> i===idx ? 'red' : 'rgba(0,0,0,0.25)');
+  const sizes  = rawData.map((_,i)=> i===idx ? 14 : 8);
+  Plotly.restyle(chartEl, {'marker.color':[colors], 'marker.size':[sizes]});
+  const x = rawData[idx].maps; const y = rawData[idx].win===null ? 50 : rawData[idx].win;
+  const xrange = Math.max(6, Math.round(Math.max(6, x * 0.25)));
+  const yrange = 12;
+  Plotly.relayout(chartEl, {'xaxis.range':[ Math.max(0, x-xrange), Math.min(35, x+xrange) ], 'yaxis.range':[ Math.max(-5, y-yrange), Math.min(105, y+yrange) ]});
+});
+
+loadCSVFromURL();
 </script>
+</body>
+</html>
