@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>CS Majors — Picks vs Winrate</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+  <style>
+    :root{
+      --bg: #ffffff;
+      --fg: #111;
+      --muted: #666;
+    }
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      padding: 12px;
+      box-sizing: border-box;
+    }
+    header {
+      display:flex;
+      gap:12px;
+      align-items:center;
+      margin-bottom:8px;
+      flex-wrap:wrap;
+    }
+    h1 { margin:0; font-size:1.1rem; }
+    .controls { margin-left:auto; display:flex; gap:8px; align-items:center; }
+    #chart { width:100%; height:75vh; min-height:400px; }
+    .hint { color:var(--muted); font-size:0.9rem; margin-top:8px; }
+    input[type="file"] { display:inline-block; }
+    .search {
+      padding:6px 8px;
+      border-radius:6px;
+      border:1px solid #ddd;
+      font-size:0.95rem;
+    }
+    .toggle {
+      display:flex; gap:8px; align-items:center;
+      font-size:0.9rem;
+      color:var(--muted);
+    }
+    footer { margin-top:10px; color:var(--muted); font-size:0.9rem; }
+    @media (max-width:600px){
+      header { gap:8px; }
+      .controls { width:100%; margin-left:0; justify-content:space-between; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>CS Majors — Maps Picked (X) vs Win Rate (%) (Y)</h1>
+
+    <div class="controls">
+      <!-- File input fallback (for local testing) -->
+      <label style="font-size:0.9rem;">
+        CSV hochladen
+        <input id="file" type="file" accept=".csv" />
+      </label>
+
+      <!-- Search / Highlight -->
+      <input id="search" class="search" placeholder="Team suchen (z.B. FaZe)" />
+
+      <!-- Trendline options -->
+      <div class="toggle">
+        <label><input id="trend" type="checkbox" /> Trendline</label>
+        <label style="margin-left:6px;"><input id="weighted" type="checkbox" /> gewichtet (Maps)</label>
+      </div>
+    </div>
+  </header>
+
+  <div id="chart"></div>
+  <div class="hint">
+    Tipp: Zoom mit Drag, Doppelklick zurücksetzen. Auf Touchgeräten: Punkt antippen, um Tooltip zu sehen.
+  </div>
+
+  <footer>
+    <strong>Wie verwenden:</strong> Lege eine <code>data.csv</code> neben dieser HTML ab (GitHub Pages lädt sie automatisch). Oder lade lokal per Button.
+  </footer>
+
+<script>
+/* ---------- Hilfsfunktionen ---------- */
+function parseNumber(v){
+  if (v === null || v === undefined) return NaN;
+  let s = String(v).trim();
+  if (s === '') return NaN;
+  s = s.replace('%','').replace(/\s+/g,'').replace(',', '.');
+  let n = parseFloat(s);
+  if (isNaN(n)) return NaN;
+  // Wenn zwischen 0 und 1 -> wahrscheinlich Bruch, umrechnen zu Prozent.
+  if (n <= 1.0) n = n * 100;
+  return n;
+}
+function parseIntSafe(v){
+  if (v === null || v === undefined) return NaN;
+  let s = String(v).trim().replace(/\s+/g,'');
+  s = s.replace(',','.');
+  let n = Number(s);
+  return isNaN(n) ? NaN : Math.round(n);
+}
+
+// Möbel: robustes Feld-Lesen (verschiedene Headernamen tolerieren)
+function getField(obj, candidates){
+  for (let k of Object.keys(obj)){
+    let kn = k.toLowerCase().replace(/[_\s]/g,'');
+    for (let cand of candidates){
+      let c = cand.toLowerCase().replace(/[_\s]/g,'');
+      if (kn === c) return obj[k];
+    }
+  }
+  return undefined;
+}
+
+/* ---------- Plot / Datenverarbeitung ---------- */
+let rawData = [];
+const chartEl = document.getElementById('chart');
+const fileInput = document.getElementById('file');
+const searchInput = document.getElementById('search');
+const trendBox = document.getElementById('trend');
+const weightedBox = document.getElementById('weighted');
+
+function processRows(rows){
+  // rows: Array of objects from PapaParse
+  const parsed = [];
+  for (let r of rows){
+    if (Object.keys(r).length === 0) continue;
+    // Kandidaten für Felder
+    let teamV = getField(r, ['Team','team','TeamName','team_name','Team Name']) ?? '';
+    let mapsV = getField(r, ['MapsPicked','Maps','maps_picked','mapspicked','picks']) ?? getField(r,['MapsPicked','maps']);
+    let winV = getField(r, ['WinRate','Winrate','win_rate','win%','Win%','WinRate%']) ?? '';
+
+    let team = String(teamV).trim();
+    if (!team) continue;
+    let maps = parseIntSafe(mapsV);
+    if (isNaN(maps)) maps = 0;
+    let win = parseNumber(winV);
+    if (isNaN(win)) win = null;
+
+    parsed.push({ team, maps, win });
+  }
+  rawData = parsed;
+  drawPlot();
+}
+
+function drawPlot(){
+  if (!rawData || rawData.length === 0){
+    chartEl.innerHTML = '<div style="padding:16px;color:#666">Keine Daten geladen.</div>';
+    return;
+  }
+
+  // Filter ungültige Win-Werte nicht — wir zeigen sie, aber markieren sie
+  const names = rawData.map(d => d.team);
+  const xs = rawData.map(d => d.maps);
+  const ys = rawData.map(d => d.win === null ? NaN : d.win);
+  const hoverTexts = rawData.map(d => {
+    return `${d.team}<br>Maps: ${d.maps}<br>Win Rate: ${ (d.win === null ? '—' : d.win.toFixed(2) + '%') }`;
+  });
+
+  // Farben / Größen (Standard)
+  const baseColor = 'rgba(31,119,180,0.85)';
+  const missingColor = 'rgba(200,200,200,0.6)';
+  const colors = rawData.map(d => (d.win === null ? missingColor : baseColor));
+  const sizes = rawData.map(_ => 9);
+
+  const trace = {
+    x: xs,
+    y: ys,
+    mode: 'markers',
+    type: 'scatter',
+    text: hoverTexts,
+    hovertemplate: '<b>%{text}</b><extra></extra>',
+    marker: {
+      size: sizes,
+      color: colors,
+      opacity: 0.9,
+      line: { width: 1, color: 'rgba(0,0,0,0.08)' },
+    },
+    customdata: names
+  };
+
+  // Layout
+  const layout = {
+    margin: { t: 40, r: 20, b: 60, l: 60 },
+    xaxis: {
+      title: 'Maps picked (insgesamt in den letzten 9 Majors)',
+      zeroline: false,
+      showgrid: true,
+      gridcolor: '#eee',
+      tick0: 0
+    },
+    yaxis: {
+      title: 'Win Rate (%)',
+      range: [0, 100],
+      showgrid: true,
+      gridcolor: '#eee'
+    },
+    hovermode: 'closest',
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: 'transparent',
+    legend: { orientation: 'h' },
+    annotations: [
+      {
+        text: 'Hinweis: Punkte mit wenigen Picks sind statistisch weniger robust.',
+        showarrow: false,
+        xref: 'paper', x: 0, yref: 'paper', y: -0.15,
+        font: { size: 11, color: '#666' },
+        align: 'left'
+      }
+    ]
+  };
+
+  const config = { responsive: true, displaylogo: false, toImageButtonOptions: {format: 'png', filename: 'cs_maJors_pick_vs_winrate', height: 800, width: 1400 } };
+
+  Plotly.newPlot(chartEl, [trace], layout, config).then(() => {
+    // nach Plot erstellt, setze Event listener für Suche / Trendline
+    applySearchHighlight();
+    if (trendBox.checked) updateTrendline();
+  });
+}
+
+/* ---------- Suche / Hervorhebung ---------- */
+function applySearchHighlight(){
+  const query = searchInput.value.trim().toLowerCase();
+  if (!rawData || rawData.length === 0) return;
+
+  if (query === ''){
+    // zurücksetzen
+    const colors = rawData.map(d => (d.win === null ? 'rgba(200,200,200,0.6)' : 'rgba(31,119,180,0.85)'));
+    const sizes = rawData.map(_ => 9);
+    Plotly.restyle(chartEl, {'marker.color': [colors], 'marker.size': [sizes]});
+    return;
+  }
+
+  // finde nächstes match (startswith oder contains)
+  let idx = rawData.findIndex(d => d.team.toLowerCase().startsWith(query));
+  if (idx === -1) idx = rawData.findIndex(d => d.team.toLowerCase().includes(query));
+  const colors = rawData.map((d,i) => (i===idx ? 'rgba(255,65,54,0.95)' : (d.win === null ? 'rgba(200,200,200,0.6)' : 'rgba(31,119,180,0.2)')));
+  const sizes = rawData.map((_,i) => i===idx ? 14 : 8);
+  Plotly.restyle(chartEl, {'marker.color': [colors], 'marker.size': [sizes]});
+
+  // falls gefunden: zoom auf Punkt
+  if (idx !== -1){
+    const x = rawData[idx].maps;
+    const y = rawData[idx].win;
+    // kleine Range um den Punkt
+    const xrange = Math.max(5, Math.round(Math.max(5, x * 0.2)));
+    const yrange = 10;
+    Plotly.relayout(chartEl, {
+      'xaxis.range': [Math.max(0, x - xrange), x + xrange],
+      'yaxis.range': [Math.max(0, y - yrange), Math.min(100, y + yrange)]
+    });
+  }
+}
+
+/* ---------- Trendline (OLS und gewichtet) ---------- */
+function updateTrendline(){
+  // entferne alte Trendline, falls existiert
+  Plotly.deleteTraces(chartEl, Array.from({length:100}, (_,i)=>i).filter(i=>true)).catch(()=>{});
+
+  // Berechne OLS (evtl. gewichtet mit maps)
+  const data = rawData.filter(d => d.win !== null);
+  if (data.length < 2) return;
+
+  const xs = data.map(d=>d.maps);
+  const ys = data.map(d=>d.win);
+  let slope=0, intercept=0;
+
+  if (weightedBox.checked){
+    const ws = data.map(d => (d.maps > 0 ? d.maps : 1)); // Gewicht = maps (min 1)
+    const wsum = ws.reduce((a,b)=>a+b,0);
+    const xbar = xs.reduce((s,xi,i)=> s + ws[i]*xi,0) / wsum;
+    const ybar = ys.reduce((s,yi,i)=> s + ws[i]*yi,0) / wsum;
+    let num = 0, den = 0;
+    for (let i=0;i<xs.length;i++){
+      num += ws[i] * (xs[i]-xbar) * (ys[i]-ybar);
+      den += ws[i] * (xs[i]-xbar) * (xs[i]-xbar);
+    }
+    slope = den === 0 ? 0 : num/den;
+    intercept = ybar - slope * xbar;
+  } else {
+    const n = xs.length;
+    const sumX = xs.reduce((a,b)=>a+b,0);
+    const sumY = ys.reduce((a,b)=>a+b,0);
+    const sumXY = xs.reduce((s,xi,i)=> s + xi*ys[i], 0);
+    const sumX2 = xs.reduce((s,xi)=> s + xi*xi, 0);
+    const denom = (n*sumX2 - sumX*sumX);
+    slope = denom === 0 ? 0 : (n*sumXY - sumX*sumY)/denom;
+    intercept = (sumY - slope*sumX)/n;
+  }
+
+  // Trendline über x-Bereich
+  const xMin = Math.min(...rawData.map(d=>d.maps));
+  const xMax = Math.max(...rawData.map(d=>d.maps));
+  const lineX = [xMin, xMax];
+  const lineY = [intercept + slope*xMin, intercept + slope*xMax];
+
+  const lineTrace = {
+    x: lineX,
+    y: lineY,
+    mode: 'lines',
+    name: weightedBox.checked ? 'Trend (gewichtet)' : 'Trend (OLS)',
+    line: { dash: 'dash', width: 2, color: 'rgba(0,0,0,0.7)' },
+    hoverinfo: 'none'
+  };
+
+  Plotly.addTraces(chartEl, lineTrace);
+}
+
+/* ---------- CSV Laden ---------- */
+// Versuch: lade data.csv aus dem gleichen Ordner (für GitHub Pages)
+function loadCSVFromURL(url='./data.csv'){
+  fetch(url).then(r=>{
+    if (!r.ok) throw new Error('nicht gefunden');
+    return r.text();
+  }).then(txt => {
+    Papa.parse(txt, {
+      header: true,
+      skipEmptyLines: true,
+      complete: function(results){ processRows(results.data); }
+    });
+  }).catch(err => {
+    // Fallback: zeige Hinweis und aktiviere File-Input
+    console.warn('data.csv nicht geladen (lokaler Test?). Bitte Datei hochladen.', err);
+    chartEl.innerHTML = '<div style="padding:14px;color:#666">data.csv nicht automatisch geladen. Nutze den "CSV hochladen" Button oder stelle die Seite via http(s) bereit (z.B. GitHub Pages).</div>';
+  });
+}
+
+fileInput.addEventListener('change', ev=>{
+  const f = ev.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    Papa.parse(r.result, { header: true, skipEmptyLines: true, complete: function(res){ processRows(res.data); } });
+  };
+  r.readAsText(f);
+});
+
+searchInput.addEventListener('input', ()=> {
+  applySearchHighlight();
+});
+
+trendBox.addEventListener('change', ()=>{
+  if (trendBox.checked) updateTrendline();
+  else {
+    // remove trendline by re-drawing base plot
+    drawPlot();
+  }
+});
+weightedBox.addEventListener('change', ()=>{
+  if (trendBox.checked) updateTrendline();
+});
+
+loadCSVFromURL();
+</script>
+</body>
+</html>
